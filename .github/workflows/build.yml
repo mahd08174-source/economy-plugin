@@ -1,0 +1,31 @@
+name: Build
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Build
+        run: mvn -B package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EconomyPlugin
+          path: target/EconomyPlugin-*.jar
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "build-${{ github.run_number }}" target/EconomyPlugin-*.jar \
+            --title "Build ${{ github.run_number }}" \
+            --notes "Paper 26.2 economy plugin (Java 25)"
