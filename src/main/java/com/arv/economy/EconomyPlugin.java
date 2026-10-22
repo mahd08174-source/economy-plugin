@@ -25,7 +25,8 @@ public class EconomyPlugin extends JavaPlugin implements Listener {
         Shop shop = new Shop(this);
         commands = new EcoCommands(this, shop);
 
-        for (String name : List.of("bal", "pay", "give", "shop", "tpa", "tpahere", "tpaccept", "tpdeny")) {
+        for (String name : List.of("bal", "pay", "give", "remove", "shop", "sell",
+                "tpa", "tpahere", "tpaccept", "tpdeny")) {
             PluginCommand cmd = getCommand(name);
             if (cmd != null) {
                 cmd.setExecutor(commands);

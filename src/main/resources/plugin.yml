@@ -2,21 +2,27 @@ name: EconomyPlugin
 version: '1.0.0'
 main: com.arv.economy.EconomyPlugin
 api-version: '26.2'
-description: Economy with /bal /pay /shop /tpa /tpahere and a cash sidebar
+description: DerekSMP economy with /bal /pay /shop /sell /tpa /tpahere and a cash sidebar
 commands:
   bal:
     description: Show your balance (or another player's)
     usage: /bal [player]
     aliases: [balance, money]
   pay:
-    description: Pay another player
+    description: Pay a player (amounts like 100m work)
     usage: /pay <player> <amount>
   give:
     description: Dev only - give money to a player
     usage: /give <username> <money>
+  remove:
+    description: Dev only - remove money from a player
+    usage: /remove <username> <money>
   shop:
     description: Open the shop
     usage: /shop
+  sell:
+    description: Sell the item in your hand, or everything sellable with /sell all
+    usage: /sell [all]
   tpa:
     description: Ask to teleport to a player
     usage: /tpa <player>

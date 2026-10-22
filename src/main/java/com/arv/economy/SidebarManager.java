@@ -1,5 +1,6 @@
 package com.arv.economy;
 
+import io.papermc.paper.scoreboard.numbers.NumberFormat;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -33,8 +34,10 @@ public class SidebarManager {
         Objective objective = board.registerNewObjective(
                 "economy",
                 Criteria.DUMMY,
-                Component.text("ECONOMY", NamedTextColor.GOLD, TextDecoration.BOLD));
+                Component.text("DerekSMP", NamedTextColor.GOLD, TextDecoration.BOLD));
         objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+        // hides the red score numbers on the right side of the sidebar
+        objective.numberFormat(NumberFormat.blank());
 
         Team nameTeam = board.registerNewTeam("name");
         nameTeam.addEntry(NAME_ENTRY);

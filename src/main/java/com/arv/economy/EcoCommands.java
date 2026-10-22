@@ -44,7 +44,9 @@ public class EcoCommands implements CommandExecutor {
             case "bal" -> bal(sender, args);
             case "pay" -> pay(sender, args);
             case "give" -> give(sender, args);
+            case "remove" -> remove(sender, args);
             case "shop" -> openShop(sender);
+            case "sell" -> sell(sender, args);
             case "tpa" -> tpa(sender, args, false);
             case "tpahere" -> tpa(sender, args, true);
             case "tpaccept" -> tpAccept(sender);
@@ -64,6 +66,11 @@ public class EcoCommands implements CommandExecutor {
 
     private static void info(CommandSender to, String message) {
         to.sendMessage(Component.text(message, NamedTextColor.GREEN));
+    }
+
+    private static boolean isDev(CommandSender sender) {
+        return sender instanceof ConsoleCommandSender
+                || (sender instanceof Player p && p.getName().equalsIgnoreCase(DEV_NAME));
     }
 
     private Target resolve(String name) {
@@ -112,7 +119,7 @@ public class EcoCommands implements CommandExecutor {
             return;
         }
         if (args.length != 2) {
-            error(sender, "Usage: /pay <player> <amount>");
+            error(sender, "Usage: /pay <player> <amount>  (e.g. 100m, 1.5k)");
             return;
         }
         Target target = resolve(args[0]);
@@ -120,13 +127,9 @@ public class EcoCommands implements CommandExecutor {
             error(sender, "Player not found.");
             return;
         }
-        if (target.id().equals(p.getUniqueId())) {
-            error(sender, "You can't pay yourself.");
-            return;
-        }
         Double amount = EconomyManager.parseAmount(args[1]);
         if (amount == null) {
-            error(sender, "Enter a valid amount, like 50 or 12.50.");
+            error(sender, "Enter a valid amount, like 50, 12.50, 100k or 100m.");
             return;
         }
         if (!eco.withdraw(p.getUniqueId(), amount)) {
@@ -136,15 +139,13 @@ public class EcoCommands implements CommandExecutor {
         eco.add(target.id(), amount);
         info(p, "You paid " + target.name() + " " + EconomyManager.format(amount) + ".");
         Player online = Bukkit.getPlayer(target.id());
-        if (online != null) {
+        if (online != null && !online.equals(p)) {
             info(online, p.getName() + " paid you " + EconomyManager.format(amount) + ".");
         }
     }
 
     private void give(CommandSender sender, String[] args) {
-        boolean allowed = sender instanceof ConsoleCommandSender
-                || (sender instanceof Player p && p.getName().equalsIgnoreCase(DEV_NAME));
-        if (!allowed) {
+        if (!isDev(sender)) {
             error(sender, "You don't have permission to use this command.");
             return;
         }
@@ -159,7 +160,7 @@ public class EcoCommands implements CommandExecutor {
         }
         Double amount = EconomyManager.parseAmount(args[1]);
         if (amount == null) {
-            error(sender, "Enter a valid amount, like 500 or 12.50.");
+            error(sender, "Enter a valid amount, like 500, 100k or 100m.");
             return;
         }
         eco.add(target.id(), amount);
@@ -170,12 +171,54 @@ public class EcoCommands implements CommandExecutor {
         }
     }
 
+    private void remove(CommandSender sender, String[] args) {
+        if (!isDev(sender)) {
+            error(sender, "You don't have permission to use this command.");
+            return;
+        }
+        if (args.length != 2) {
+            error(sender, "Usage: /remove <username> <money>");
+            return;
+        }
+        Target target = resolve(args[0]);
+        if (target == null) {
+            error(sender, "Player not found.");
+            return;
+        }
+        Double amount = EconomyManager.parseAmount(args[1]);
+        if (amount == null) {
+            error(sender, "Enter a valid amount, like 500, 100k or 100m.");
+            return;
+        }
+        double take = Math.min(amount, eco.get(target.id()));
+        eco.withdraw(target.id(), take);
+        info(sender, "Removed " + EconomyManager.format(take) + " from " + target.name() + ".");
+        Player online = Bukkit.getPlayer(target.id());
+        if (online != null && !online.equals(sender)) {
+            error(online, EconomyManager.format(take) + " was removed from your balance.");
+        }
+    }
+
     private void openShop(CommandSender sender) {
         if (!(sender instanceof Player p)) {
             error(sender, "Only players can use /shop.");
             return;
         }
         shop.openMain(p);
+    }
+
+    private void sell(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player p)) {
+            error(sender, "Only players can use /sell.");
+            return;
+        }
+        if (args.length == 0 || args[0].equalsIgnoreCase("hand")) {
+            shop.sellHand(p);
+        } else if (args[0].equalsIgnoreCase("all")) {
+            shop.sellAll(p);
+        } else {
+            error(sender, "Usage: /sell (item in hand) or /sell all");
+        }
     }
 
     // ---------- teleport requests ----------

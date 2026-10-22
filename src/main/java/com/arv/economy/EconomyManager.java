@@ -8,16 +8,18 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class EconomyManager {
 
     public static final double START_BALANCE = 1000.0;
-    public static final double MAX_AMOUNT = 1_000_000_000_000.0;
-    private static final Pattern AMOUNT = Pattern.compile("\\d{1,13}(\\.\\d{1,2})?");
+    public static final double MAX_AMOUNT = 1_000_000_000_000_000.0;
+    private static final double MAX_BALANCE = 1.0e18;
+    private static final Pattern AMOUNT = Pattern.compile("(\\d{1,15}(?:\\.\\d{1,6})?)([kKmMbBtT])?");
+    private static final String[] SUFFIXES = {"", "k", "m", "b", "t", "q"};
 
     private final EconomyPlugin plugin;
     private final File file;
@@ -84,7 +86,7 @@ public class EconomyManager {
     }
 
     public void add(UUID id, double amount) {
-        balances.put(id, round(get(id) + amount));
+        balances.put(id, Math.min(MAX_BALANCE, round(get(id) + amount)));
         dirty = true;
     }
 
@@ -98,23 +100,60 @@ public class EconomyManager {
         return true;
     }
 
-    /** Returns null when the text is not a valid positive amount (max 2 decimals). */
+    /**
+     * Parses amounts like 500, 12.50, 100k, 1.5m, 2b, 3t.
+     * Returns null when the text is not a valid positive amount.
+     */
     public static Double parseAmount(String text) {
-        if (text == null || !AMOUNT.matcher(text).matches()) {
+        if (text == null) {
             return null;
         }
-        double value = new BigDecimal(text).setScale(2, RoundingMode.HALF_UP).doubleValue();
-        if (value <= 0 || value > MAX_AMOUNT) {
+        Matcher m = AMOUNT.matcher(text.trim());
+        if (!m.matches()) {
             return null;
         }
-        return value;
+        BigDecimal value = new BigDecimal(m.group(1));
+        String suffix = m.group(2);
+        if (suffix != null) {
+            BigDecimal factor = switch (Character.toLowerCase(suffix.charAt(0))) {
+                case 'k' -> BigDecimal.valueOf(1_000L);
+                case 'm' -> BigDecimal.valueOf(1_000_000L);
+                case 'b' -> BigDecimal.valueOf(1_000_000_000L);
+                default -> BigDecimal.valueOf(1_000_000_000_000L);
+            };
+            value = value.multiply(factor);
+        }
+        value = value.setScale(2, RoundingMode.HALF_UP);
+        if (value.signum() <= 0 || value.compareTo(BigDecimal.valueOf(MAX_AMOUNT)) > 0) {
+            return null;
+        }
+        return value.doubleValue();
     }
 
     public static double round(double value) {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
+    /** Short money format: $950, $12.50, $1.7k, $2.5m, $1.7b, $1.7t. */
     public static String format(double value) {
-        return "$" + String.format(Locale.US, "%,.2f", value);
+        BigDecimal v = BigDecimal.valueOf(value);
+        BigDecimal thousand = BigDecimal.valueOf(1000);
+        int index = 0;
+        while (v.abs().compareTo(thousand) >= 0 && index < SUFFIXES.length - 1) {
+            v = v.divide(thousand);
+            index++;
+        }
+        String text;
+        if (index == 0) {
+            v = v.setScale(2, RoundingMode.HALF_UP);
+            if (v.remainder(BigDecimal.ONE).signum() == 0) {
+                text = v.toBigInteger().toString();
+            } else {
+                text = v.toPlainString();
+            }
+        } else {
+            text = v.setScale(2, RoundingMode.DOWN).stripTrailingZeros().toPlainString();
+        }
+        return "$" + text + SUFFIXES[index];
     }
 }
