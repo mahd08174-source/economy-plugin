@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 
 public class EconomyManager {
 
-    public static final double START_BALANCE = 1000.0;
+    public static final double START_BALANCE = 200_000.0; // 200x the original $1,000
     public static final double MAX_AMOUNT = 1_000_000_000_000_000.0;
     private static final double MAX_BALANCE = 1.0e18;
     private static final Pattern AMOUNT = Pattern.compile("(\\d{1,15}(?:\\.\\d{1,6})?)([kKmMbBtT])?");
@@ -79,6 +79,18 @@ public class EconomyManager {
             balances.put(id, START_BALANCE);
             dirty = true;
         }
+    }
+
+    /** Sets a balance directly (used by admin commands). */
+    public void set(UUID id, double amount) {
+        balances.put(id, Math.max(0.0, Math.min(MAX_BALANCE, round(amount))));
+        dirty = true;
+    }
+
+    /** Resets a player's balance to the starting balance. */
+    public void reset(UUID id) {
+        balances.put(id, START_BALANCE);
+        dirty = true;
     }
 
     public double get(UUID id) {
