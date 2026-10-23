@@ -4,7 +4,7 @@ Paper 26.2 economy plugin (Java 25).
 
 - `/bal [player]` - balance
 - `/pay <player> <amount>` - amounts accept k, m, b, t (e.g. `100m`, `1.5k`)
-- `/shop` - paged GUI with 8 categories: Blocks, Decoration, Farming & Food, Combat & Tools, Redstone, Potions, Spawners, Miscellaneous (left-click buy 1, shift-click buy 16, right-click buy 64; Back / Previous / Next buttons)
+- `/shop` - paged GUI with 8 categories: Blocks, Decoration, Farming & Food, Combat & Tools, Redstone, Potions, Spawners, Miscellaneous with Back / Previous / Next buttons. Clicking an item opens the Item Inspector: centered item, -64/-32/-16/-1 and +1/+16/+32/+64 quantity buttons, Buy and Sell, and an Enchantments menu (valid vanilla and datapack enchantments, priced per level per item)
 - `/sell` - sell the item in your hand (50% of shop price); `/sell all` sells everything sellable except gear
 - `/tpa <player>`, `/tpahere <player>`, `/tpaccept`, `/tpdeny`
 - `/rtp` - random teleport inside the world border (overworld only, safety-checked, max 10,000 blocks from centre)
