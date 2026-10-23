@@ -2,7 +2,7 @@ name: EconomyPlugin
 version: '1.0.0'
 main: com.arv.economy.EconomyPlugin
 api-version: '26.2'
-description: DerekSMP economy with /bal /pay /shop /sell /tpa /tpahere and a cash sidebar
+description: DerekSMP economy with /bal /pay /shop /sell /tpa /tpahere /rtp /home, admin tools and a cash sidebar
 commands:
   bal:
     description: Show your balance (or another player's)
@@ -35,3 +35,27 @@ commands:
   tpdeny:
     description: Deny a teleport request
     usage: /tpdeny
+  kick:
+    description: Admin only - kick an online player
+    usage: /kick <player> [reason]
+  ban:
+    description: Admin only - ban a player
+    usage: /ban <player> [reason]
+  wipe:
+    description: Admin only - reset a player's balance and homes
+    usage: /wipe <player>
+  removeall:
+    description: Admin only - clear a player's balance
+    usage: /removeall <player>
+  rtp:
+    description: Teleport to a random safe location inside the world border
+    usage: /rtp
+  sethome:
+    description: Save a home (up to 10)
+    usage: /sethome <name>
+  home:
+    description: Teleport to a saved home (no name lists your homes)
+    usage: /home <name>
+  delhome:
+    description: Delete a saved home
+    usage: /delhome <name>
