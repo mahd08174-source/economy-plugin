@@ -21,34 +21,57 @@ import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.potion.PotionType;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * Paged, category-based shop GUI.
+ *
+ * Main menu -> category (28 items per page, previous/next buttons, back button).
+ * Prices live in {@link ShopCatalog}; spawners and potions are defined below.
+ */
 public class Shop implements Listener {
 
     /** Fraction of the shop price you get back when selling. */
     public static final double SELL_RATIO = 0.5;
 
     public enum Category {
-        GEAR("Gear", Material.DIAMOND_CHESTPLATE, 10, NamedTextColor.AQUA),
-        BLOCKS("Blocks", Material.GRASS_BLOCK, 11, NamedTextColor.GREEN),
-        FOOD("Food", Material.COOKED_BEEF, 12, NamedTextColor.GOLD),
-        SPAWNERS("Spawners", Material.SPAWNER, 14, NamedTextColor.DARK_PURPLE),
-        POTIONS("Potions", Material.POTION, 15, NamedTextColor.LIGHT_PURPLE),
-        MISC("Misc", Material.ENDER_CHEST, 16, NamedTextColor.YELLOW);
+        BLOCKS("Blocks", Material.GRASS_BLOCK, 10, NamedTextColor.GREEN,
+                "Stone, wood, bricks, earth and storage blocks", true),
+        DECORATION("Decoration", Material.LANTERN, 12, NamedTextColor.AQUA,
+                "Colored blocks, glass, lighting and furniture", true),
+        FARMING("Farming & Food", Material.WHEAT, 14, NamedTextColor.GOLD,
+                "Seeds, crops, saplings and cooked food", true),
+        COMBAT("Combat & Tools", Material.DIAMOND_SWORD, 16, NamedTextColor.RED,
+                "Diamond and netherite gear, weapons and utility", false),
+        REDSTONE("Redstone", Material.REDSTONE, 28, NamedTextColor.DARK_RED,
+                "Components, pistons, rails and storage", true),
+        POTIONS("Potions", Material.POTION, 30, NamedTextColor.LIGHT_PURPLE,
+                "Drinkable and splash potions", true),
+        SPAWNERS("Spawners", Material.SPAWNER, 32, NamedTextColor.DARK_PURPLE,
+                "Mob spawners", true),
+        MISC("Miscellaneous", Material.ENDER_CHEST, 34, NamedTextColor.YELLOW,
+                "Resources, ores, mob drops, workstations and rares", true);
 
         final String title;
         final Material icon;
         final int slot;
         final NamedTextColor color;
+        final String blurb;
+        /** Whether /sell all may sell this category (gear is skipped so it is never sold by accident). */
+        final boolean sellAll;
 
-        Category(String title, Material icon, int slot, NamedTextColor color) {
+        Category(String title, Material icon, int slot, NamedTextColor color, String blurb, boolean sellAll) {
             this.title = title;
             this.icon = icon;
             this.slot = slot;
             this.color = color;
+            this.blurb = blurb;
+            this.sellAll = sellAll;
         }
     }
 
@@ -56,10 +79,12 @@ public class Shop implements Listener {
 
     private static final class MenuHolder implements InventoryHolder {
         private final Category category; // null = main menu
+        private final int page;
         private Inventory inventory;
 
-        MenuHolder(Category category) {
+        MenuHolder(Category category, int page) {
             this.category = category;
+            this.page = page;
         }
 
         @Override
@@ -68,12 +93,43 @@ public class Shop implements Listener {
         }
     }
 
-    private static final int BACK_SLOT = 49;
+    // ---------- layout ----------
+
+    private static final int MAIN_SIZE = 45;
+    private static final int MAIN_INFO_SLOT = 22;
+    private static final int MAIN_BALANCE_SLOT = 40;
+
+    private static final int CAT_SIZE = 54;
+    private static final int HEADER_SLOT = 4;
+    private static final int BACK_SLOT = 45;
+    private static final int PREV_SLOT = 48;
+    private static final int PAGE_SLOT = 49;
+    private static final int NEXT_SLOT = 50;
     private static final int BALANCE_SLOT = 53;
-    private static final int MAX_PER_CATEGORY = 45;
+
+    /** 4 rows x 7 columns of item slots inside the border. */
+    private static final int[] ITEM_SLOTS = new int[28];
+    /** Inventory slot -> index within the page (or -1). */
+    private static final int[] SLOT_INDEX = new int[CAT_SIZE];
+    private static final int PAGE_SIZE = ITEM_SLOTS.length;
+
+    static {
+        Arrays.fill(SLOT_INDEX, -1);
+        int n = 0;
+        for (int row = 1; row <= 4; row++) {
+            for (int col = 1; col <= 7; col++) {
+                int slot = row * 9 + col;
+                ITEM_SLOTS[n] = slot;
+                SLOT_INDEX[slot] = n;
+                n++;
+            }
+        }
+    }
 
     private final EconomyPlugin plugin;
     private final Map<Category, List<Entry>> catalog = new EnumMap<>(Category.class);
+    private final Map<Material, Entry> plainIndex = new HashMap<>();
+    private final List<Entry> exactEntries = new ArrayList<>();
 
     public Shop(EconomyPlugin plugin) {
         this.plugin = plugin;
@@ -82,15 +138,36 @@ public class Shop implements Listener {
 
     // ---------- catalog ----------
 
+    private static boolean isExact(Material type) {
+        return type == Material.SPAWNER || type == Material.POTION || type == Material.SPLASH_POTION;
+    }
+
     private void add(Entry entry) {
-        List<Entry> list = catalog.computeIfAbsent(entry.category(), k -> new ArrayList<>());
-        if (list.size() < MAX_PER_CATEGORY) {
-            list.add(entry);
+        catalog.computeIfAbsent(entry.category(), k -> new ArrayList<>()).add(entry);
+        Material type = entry.item().getType();
+        if (isExact(type)) {
+            exactEntries.add(entry);
+        } else {
+            plainIndex.putIfAbsent(type, entry);
         }
     }
 
-    private void simple(Category category, Material material, double price) {
-        add(new Entry(category, pretty(material.name()), price, new ItemStack(material)));
+    /** Loads "MATERIAL PRICE" lines; unknown materials are skipped so a version mismatch never breaks the shop. */
+    private void load(Category category, String table) {
+        for (String raw : table.split("\n")) {
+            String line = raw.strip();
+            if (line.isEmpty() || line.startsWith("#")) {
+                continue;
+            }
+            String[] parts = line.split("\\s+");
+            Material material = Material.matchMaterial(parts[0]);
+            if (material == null || !material.isItem() || material.isAir()) {
+                plugin.getLogger().warning("Shop: skipping unknown item " + parts[0]);
+                continue;
+            }
+            add(new Entry(category, pretty(material.name()), Double.parseDouble(parts[1]),
+                    new ItemStack(material)));
+        }
     }
 
     private void spawner(EntityType type, double price) {
@@ -116,125 +193,12 @@ public class Shop implements Listener {
     }
 
     private void buildCatalog() {
-        // ---- Gear ----
-        Category g = Category.GEAR;
-        simple(g, Material.IRON_SWORD, 8000);
-        simple(g, Material.IRON_PICKAXE, 10000);
-        simple(g, Material.IRON_AXE, 9000);
-        simple(g, Material.IRON_SHOVEL, 6000);
-        simple(g, Material.IRON_HELMET, 15000);
-        simple(g, Material.IRON_CHESTPLATE, 24000);
-        simple(g, Material.IRON_LEGGINGS, 21000);
-        simple(g, Material.IRON_BOOTS, 12000);
-        simple(g, Material.DIAMOND_SWORD, 30000);
-        simple(g, Material.DIAMOND_PICKAXE, 40000);
-        simple(g, Material.DIAMOND_AXE, 36000);
-        simple(g, Material.DIAMOND_SHOVEL, 20000);
-        simple(g, Material.DIAMOND_HELMET, 60000);
-        simple(g, Material.DIAMOND_CHESTPLATE, 96000);
-        simple(g, Material.DIAMOND_LEGGINGS, 84000);
-        simple(g, Material.DIAMOND_BOOTS, 48000);
-        simple(g, Material.NETHERITE_SWORD, 180000);
-        simple(g, Material.NETHERITE_PICKAXE, 190000);
-        simple(g, Material.NETHERITE_AXE, 200000);
-        simple(g, Material.NETHERITE_SHOVEL, 180000);
-        simple(g, Material.NETHERITE_HELMET, 240000);
-        simple(g, Material.NETHERITE_CHESTPLATE, 300000);
-        simple(g, Material.NETHERITE_LEGGINGS, 280000);
-        simple(g, Material.NETHERITE_BOOTS, 200000);
-        simple(g, Material.BOW, 16000);
-        simple(g, Material.CROSSBOW, 20000);
-        simple(g, Material.ARROW, 400);
-        simple(g, Material.SHIELD, 12000);
-        simple(g, Material.TRIDENT, 240000);
-        simple(g, Material.MACE, 600000);
-        simple(g, Material.WIND_CHARGE, 4000);
-        simple(g, Material.ELYTRA, 500000);
-        simple(g, Material.TOTEM_OF_UNDYING, 120000);
-        simple(g, Material.TURTLE_HELMET, 30000);
-        simple(g, Material.ENDER_PEARL, 10000);
-        simple(g, Material.FISHING_ROD, 8000);
-        simple(g, Material.SHEARS, 4000);
-        simple(g, Material.FLINT_AND_STEEL, 4000);
-
-        // ---- Blocks ----
-        Category b = Category.BLOCKS;
-        simple(b, Material.COBBLESTONE, 200);
-        simple(b, Material.STONE, 400);
-        simple(b, Material.DIRT, 200);
-        simple(b, Material.GRAVEL, 200);
-        simple(b, Material.SAND, 400);
-        simple(b, Material.ANDESITE, 400);
-        simple(b, Material.DIORITE, 400);
-        simple(b, Material.GRANITE, 400);
-        simple(b, Material.DEEPSLATE, 600);
-        simple(b, Material.NETHERRACK, 200);
-        simple(b, Material.END_STONE, 1600);
-        simple(b, Material.BLACKSTONE, 800);
-        simple(b, Material.OAK_PLANKS, 200);
-        simple(b, Material.OAK_LOG, 800);
-        simple(b, Material.SPRUCE_LOG, 800);
-        simple(b, Material.BIRCH_LOG, 800);
-        simple(b, Material.DARK_OAK_LOG, 800);
-        simple(b, Material.GLASS, 800);
-        simple(b, Material.STONE_BRICKS, 600);
-        simple(b, Material.DEEPSLATE_BRICKS, 1000);
-        simple(b, Material.BRICKS, 1200);
-        simple(b, Material.SANDSTONE, 800);
-        simple(b, Material.TERRACOTTA, 1000);
-        simple(b, Material.WHITE_CONCRETE, 1000);
-        simple(b, Material.WHITE_WOOL, 1000);
-        simple(b, Material.PRISMARINE, 1600);
-        simple(b, Material.BOOKSHELF, 5000);
-        simple(b, Material.ICE, 1000);
-        simple(b, Material.PACKED_ICE, 2000);
-        simple(b, Material.HAY_BLOCK, 2400);
-        simple(b, Material.SOUL_SAND, 1200);
-        simple(b, Material.OBSIDIAN, 6000);
-        simple(b, Material.CRYING_OBSIDIAN, 12000);
-        simple(b, Material.QUARTZ_BLOCK, 3000);
-        simple(b, Material.GLOWSTONE, 4000);
-        simple(b, Material.SEA_LANTERN, 5000);
-        simple(b, Material.COAL_BLOCK, 6000);
-        simple(b, Material.COPPER_BLOCK, 12000);
-        simple(b, Material.LAPIS_BLOCK, 12000);
-        simple(b, Material.REDSTONE_BLOCK, 9000);
-        simple(b, Material.IRON_BLOCK, 18000);
-        simple(b, Material.GOLD_BLOCK, 36000);
-        simple(b, Material.EMERALD_BLOCK, 72000);
-        simple(b, Material.DIAMOND_BLOCK, 120000);
-        simple(b, Material.NETHERITE_BLOCK, 720000);
-
-        // ---- Food ----
-        Category f = Category.FOOD;
-        simple(f, Material.APPLE, 600);
-        simple(f, Material.BREAD, 600);
-        simple(f, Material.CARROT, 400);
-        simple(f, Material.POTATO, 400);
-        simple(f, Material.BAKED_POTATO, 600);
-        simple(f, Material.BEETROOT, 400);
-        simple(f, Material.SWEET_BERRIES, 400);
-        simple(f, Material.GLOW_BERRIES, 600);
-        simple(f, Material.DRIED_KELP, 200);
-        simple(f, Material.COOKIE, 200);
-        simple(f, Material.MELON_SLICE, 200);
-        simple(f, Material.COOKED_COD, 1000);
-        simple(f, Material.COOKED_SALMON, 1000);
-        simple(f, Material.COOKED_CHICKEN, 1000);
-        simple(f, Material.COOKED_RABBIT, 1000);
-        simple(f, Material.COOKED_MUTTON, 1200);
-        simple(f, Material.COOKED_PORKCHOP, 1200);
-        simple(f, Material.COOKED_BEEF, 1200);
-        simple(f, Material.PUMPKIN_PIE, 1200);
-        simple(f, Material.CHORUS_FRUIT, 1200);
-        simple(f, Material.MUSHROOM_STEW, 1600);
-        simple(f, Material.BEETROOT_SOUP, 1200);
-        simple(f, Material.RABBIT_STEW, 2400);
-        simple(f, Material.HONEY_BOTTLE, 1600);
-        simple(f, Material.GOLDEN_CARROT, 2400);
-        simple(f, Material.CAKE, 6000);
-        simple(f, Material.GOLDEN_APPLE, 12000);
-        simple(f, Material.ENCHANTED_GOLDEN_APPLE, 160000);
+        load(Category.BLOCKS, ShopCatalog.BLOCKS);
+        load(Category.DECORATION, ShopCatalog.DECORATION);
+        load(Category.FARMING, ShopCatalog.FARMING);
+        load(Category.COMBAT, ShopCatalog.COMBAT);
+        load(Category.REDSTONE, ShopCatalog.REDSTONE);
+        load(Category.MISC, ShopCatalog.MISC);
 
         // ---- Spawners ----
         spawner(EntityType.PIG, 200000);
@@ -279,41 +243,6 @@ public class Shop implements Listener {
         potion(Material.SPLASH_POTION, PotionType.STRONG_POISON, 16000);
         potion(Material.SPLASH_POTION, PotionType.SLOWNESS, 8000);
         potion(Material.SPLASH_POTION, PotionType.WEAKNESS, 8000);
-
-        // ---- Misc ----
-        Category m = Category.MISC;
-        simple(m, Material.COAL, 600);
-        simple(m, Material.REDSTONE, 600);
-        simple(m, Material.LAPIS_LAZULI, 600);
-        simple(m, Material.QUARTZ, 1000);
-        simple(m, Material.IRON_INGOT, 2000);
-        simple(m, Material.GOLD_INGOT, 4000);
-        simple(m, Material.EMERALD, 8000);
-        simple(m, Material.DIAMOND, 20000);
-        simple(m, Material.NETHERITE_INGOT, 80000);
-        simple(m, Material.STRING, 400);
-        simple(m, Material.BONE, 400);
-        simple(m, Material.GUNPOWDER, 1600);
-        simple(m, Material.SLIME_BALL, 1600);
-        simple(m, Material.BLAZE_ROD, 6000);
-        simple(m, Material.EXPERIENCE_BOTTLE, 4000);
-        simple(m, Material.FIREWORK_ROCKET, 2000);
-        simple(m, Material.WATER_BUCKET, 3000);
-        simple(m, Material.LAVA_BUCKET, 8000);
-        simple(m, Material.TNT, 8000);
-        simple(m, Material.PISTON, 3000);
-        simple(m, Material.STICKY_PISTON, 5000);
-        simple(m, Material.OBSERVER, 2400);
-        simple(m, Material.HOPPER, 6000);
-        simple(m, Material.NAME_TAG, 30000);
-        simple(m, Material.SADDLE, 20000);
-        simple(m, Material.LEAD, 4000);
-        simple(m, Material.ANVIL, 20000);
-        simple(m, Material.ENCHANTING_TABLE, 40000);
-        simple(m, Material.ENDER_CHEST, 40000);
-        simple(m, Material.END_CRYSTAL, 60000);
-        simple(m, Material.SHULKER_BOX, 120000);
-        simple(m, Material.BEACON, 1000000);
     }
 
     private static String pretty(String enumName) {
@@ -334,7 +263,12 @@ public class Shop implements Listener {
         return EconomyManager.round(entry.price() * SELL_RATIO);
     }
 
-    // ---------- menus ----------
+    private int pageCount(Category category) {
+        int size = catalog.getOrDefault(category, List.of()).size();
+        return Math.max(1, (size + PAGE_SIZE - 1) / PAGE_SIZE);
+    }
+
+    // ---------- menu helpers ----------
 
     private static Component line(String text, NamedTextColor color) {
         return Component.text(text, color).decoration(TextDecoration.ITALIC, false);
@@ -348,6 +282,19 @@ public class Shop implements Listener {
         return pane;
     }
 
+    private static ItemStack button(Material material, String name, NamedTextColor color, String... lore) {
+        ItemStack stack = new ItemStack(material);
+        ItemMeta meta = stack.getItemMeta();
+        meta.displayName(line(name, color).decorate(TextDecoration.BOLD));
+        List<Component> lines = new ArrayList<>();
+        for (String text : lore) {
+            lines.add(line(text, NamedTextColor.GRAY));
+        }
+        meta.lore(lines);
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
     private ItemStack balanceItem(Player player) {
         ItemStack stack = new ItemStack(Material.GOLD_INGOT);
         ItemMeta meta = stack.getItemMeta();
@@ -357,59 +304,119 @@ public class Shop implements Listener {
         return stack;
     }
 
+    private static void click(Player player) {
+        player.playSound(player.getLocation(), "ui.button.click", 0.6f, 1.0f);
+    }
+
+    // ---------- main menu ----------
+
     public void openMain(Player player) {
-        MenuHolder holder = new MenuHolder(null);
-        Inventory inv = Bukkit.createInventory(holder, 27, Component.text("Shop", NamedTextColor.DARK_GRAY));
+        MenuHolder holder = new MenuHolder(null, 0);
+        Inventory inv = Bukkit.createInventory(holder, MAIN_SIZE,
+                Component.text("Shop - Categories", NamedTextColor.DARK_GRAY));
         holder.inventory = inv;
-        for (int i = 0; i < inv.getSize(); i++) {
+        for (int i = 0; i < MAIN_SIZE; i++) {
             inv.setItem(i, filler());
         }
+        inv.setItem(HEADER_SLOT, button(Material.NETHER_STAR, "Shop", NamedTextColor.GOLD,
+                "Pick a category to browse."));
         for (Category category : Category.values()) {
+            int items = catalog.getOrDefault(category, List.of()).size();
             ItemStack icon = new ItemStack(category.icon);
             ItemMeta meta = icon.getItemMeta();
             meta.displayName(line(category.title, category.color).decorate(TextDecoration.BOLD));
-            meta.lore(List.of(line("Click to browse", NamedTextColor.GRAY)));
+            meta.lore(List.of(
+                    line(category.blurb, NamedTextColor.GRAY),
+                    line(items + " items", NamedTextColor.DARK_GRAY),
+                    line("Click to browse", NamedTextColor.YELLOW)));
             icon.setItemMeta(meta);
             inv.setItem(category.slot, icon);
         }
-        inv.setItem(22, balanceItem(player));
+        inv.setItem(MAIN_INFO_SLOT, button(Material.BOOK, "How it works", NamedTextColor.AQUA,
+                "Left-click: buy 1",
+                "Shift-click: buy 16",
+                "Right-click: buy 64",
+                "/sell sells the item in your hand",
+                "/sell all sells everything sellable",
+                "(gear is never sold by /sell all)"));
+        inv.setItem(MAIN_BALANCE_SLOT, balanceItem(player));
         player.openInventory(inv);
     }
 
-    private void openCategory(Player player, Category category) {
-        MenuHolder holder = new MenuHolder(category);
-        Inventory inv = Bukkit.createInventory(holder, 54,
-                Component.text("Shop - " + category.title, NamedTextColor.DARK_GRAY));
+    // ---------- category pages ----------
+
+    private void openCategory(Player player, Category category, int requestedPage) {
+        int pages = pageCount(category);
+        int page = Math.max(0, Math.min(requestedPage, pages - 1));
+        List<Entry> entries = catalog.getOrDefault(category, List.of());
+
+        MenuHolder holder = new MenuHolder(category, page);
+        Inventory inv = Bukkit.createInventory(holder, CAT_SIZE,
+                Component.text("Shop - " + category.title + " (" + (page + 1) + "/" + pages + ")",
+                        NamedTextColor.DARK_GRAY));
         holder.inventory = inv;
 
-        List<Entry> entries = catalog.getOrDefault(category, List.of());
-        for (int i = 0; i < entries.size() && i < MAX_PER_CATEGORY; i++) {
-            Entry entry = entries.get(i);
-            ItemStack display = entry.item().clone();
-            ItemMeta meta = display.getItemMeta();
-            meta.lore(List.of(
-                    line("Price: " + EconomyManager.format(entry.price()) + " each", NamedTextColor.GOLD),
-                    line("Sells for: " + EconomyManager.format(unitSell(entry)) + " each (/sell)",
-                            NamedTextColor.YELLOW),
-                    line("Left-click: buy 1", NamedTextColor.GRAY),
-                    line("Shift-click: buy 16", NamedTextColor.GRAY)));
-            display.setItemMeta(meta);
-            inv.setItem(i, display);
+        for (int i = 0; i < CAT_SIZE; i++) {
+            if (SLOT_INDEX[i] < 0) {
+                inv.setItem(i, filler());
+            }
         }
 
-        ItemStack back = new ItemStack(Material.ARROW);
-        ItemMeta backMeta = back.getItemMeta();
-        backMeta.displayName(line("Back", NamedTextColor.YELLOW));
-        back.setItemMeta(backMeta);
-        inv.setItem(BACK_SLOT, back);
+        // header
+        ItemStack header = new ItemStack(category.icon);
+        ItemMeta headerMeta = header.getItemMeta();
+        headerMeta.displayName(line(category.title, category.color).decorate(TextDecoration.BOLD));
+        headerMeta.lore(List.of(
+                line(category.blurb, NamedTextColor.GRAY),
+                line(entries.size() + " items - page " + (page + 1) + " of " + pages, NamedTextColor.DARK_GRAY)));
+        header.setItemMeta(headerMeta);
+        inv.setItem(HEADER_SLOT, header);
+
+        // item grid
+        int start = page * PAGE_SIZE;
+        for (int i = 0; i < PAGE_SIZE && start + i < entries.size(); i++) {
+            Entry entry = entries.get(start + i);
+            ItemStack display = entry.item().clone();
+            ItemMeta meta = display.getItemMeta();
+            List<Component> lore = new ArrayList<>();
+            lore.add(line("Price: " + EconomyManager.format(entry.price()) + " each", NamedTextColor.GOLD));
+            lore.add(line("Sells for: " + EconomyManager.format(unitSell(entry)) + " each", NamedTextColor.YELLOW));
+            if (display.getMaxStackSize() > 1) {
+                lore.add(line("Left-click: buy 1", NamedTextColor.GRAY));
+                lore.add(line("Shift-click: buy " + Math.min(16, display.getMaxStackSize()), NamedTextColor.GRAY));
+                if (display.getMaxStackSize() >= 64) {
+                    lore.add(line("Right-click: buy 64", NamedTextColor.GRAY));
+                }
+            } else {
+                lore.add(line("Click: buy 1", NamedTextColor.GRAY));
+            }
+            meta.lore(lore);
+            display.setItemMeta(meta);
+            inv.setItem(ITEM_SLOTS[i], display);
+        }
+
+        // navigation
+        inv.setItem(BACK_SLOT, button(Material.BARRIER, "Back to categories", NamedTextColor.RED,
+                "Return to the main menu"));
+        if (page > 0) {
+            inv.setItem(PREV_SLOT, button(Material.ARROW, "Previous page", NamedTextColor.YELLOW,
+                    "Go to page " + page));
+        }
+        inv.setItem(PAGE_SLOT, button(Material.PAPER, "Page " + (page + 1) + " of " + pages, NamedTextColor.WHITE,
+                category.title));
+        if (page < pages - 1) {
+            inv.setItem(NEXT_SLOT, button(Material.ARROW, "Next page", NamedTextColor.YELLOW,
+                    "Go to page " + (page + 2)));
+        }
         inv.setItem(BALANCE_SLOT, balanceItem(player));
         player.openInventory(inv);
     }
 
     // ---------- buying ----------
 
-    private void buy(Player player, Entry entry, int quantity) {
+    private void buy(Player player, Entry entry, int requested) {
         EconomyManager eco = plugin.economy();
+        int quantity = Math.max(1, Math.min(requested, entry.item().getMaxStackSize()));
         double total = EconomyManager.round(entry.price() * quantity);
         if (eco.get(player.getUniqueId()) + 0.001 < total) {
             player.sendMessage(Component.text("You need " + EconomyManager.format(total) + " to buy that.",
@@ -432,13 +439,14 @@ public class Shop implements Listener {
         eco.withdraw(player.getUniqueId(), cost);
         player.sendMessage(Component.text("Bought " + given + "x " + entry.name() + " for "
                 + EconomyManager.format(cost) + ".", NamedTextColor.GREEN));
+        player.playSound(player.getLocation(), "entity.experience_orb.pickup", 0.6f, 1.2f);
     }
 
     // ---------- selling ----------
 
     private Entry find(ItemStack stack) {
         Material type = stack.getType();
-        boolean exact = type == Material.SPAWNER || type == Material.POTION || type == Material.SPLASH_POTION;
+        boolean exact = isExact(type);
         if (!exact && stack.hasItemMeta()) {
             ItemMeta meta = stack.getItemMeta();
             // never sell enchanted/renamed items or containers that may hold items
@@ -446,18 +454,15 @@ public class Shop implements Listener {
                 return null;
             }
         }
-        for (List<Entry> list : catalog.values()) {
-            for (Entry entry : list) {
-                if (exact) {
-                    if (entry.item().isSimilar(stack)) {
-                        return entry;
-                    }
-                } else if (entry.item().getType() == type) {
+        if (exact) {
+            for (Entry entry : exactEntries) {
+                if (entry.item().isSimilar(stack)) {
                     return entry;
                 }
             }
+            return null;
         }
-        return null;
+        return plainIndex.get(type);
     }
 
     public void sellHand(Player player) {
@@ -489,8 +494,8 @@ public class Shop implements Listener {
                 continue;
             }
             Entry entry = find(stack);
-            // gear is skipped so tools and armor are never sold by accident
-            if (entry == null || entry.category() == Category.GEAR) {
+            // gear (Combat & Tools) is skipped so tools and armor are never sold by accident
+            if (entry == null || !entry.category().sellAll) {
                 continue;
             }
             total += unitSell(entry) * stack.getAmount();
@@ -527,23 +532,47 @@ public class Shop implements Listener {
         }
         int slot = event.getSlot();
 
+        // main menu
         if (holder.category == null) {
             for (Category category : Category.values()) {
                 if (category.slot == slot) {
-                    Bukkit.getScheduler().runTask(plugin, () -> openCategory(player, category));
+                    click(player);
+                    Bukkit.getScheduler().runTask(plugin, () -> openCategory(player, category, 0));
                     return;
                 }
             }
             return;
         }
 
+        // category page navigation
+        Category category = holder.category;
+        int page = holder.page;
         if (slot == BACK_SLOT) {
+            click(player);
             Bukkit.getScheduler().runTask(plugin, () -> openMain(player));
             return;
         }
-        List<Entry> entries = catalog.getOrDefault(holder.category, List.of());
-        if (slot >= 0 && slot < entries.size() && slot < MAX_PER_CATEGORY) {
-            buy(player, entries.get(slot), event.isShiftClick() ? 16 : 1);
+        if (slot == PREV_SLOT && page > 0) {
+            click(player);
+            Bukkit.getScheduler().runTask(plugin, () -> openCategory(player, category, page - 1));
+            return;
+        }
+        if (slot == NEXT_SLOT && page < pageCount(category) - 1) {
+            click(player);
+            Bukkit.getScheduler().runTask(plugin, () -> openCategory(player, category, page + 1));
+            return;
+        }
+
+        // item grid
+        int index = slot >= 0 && slot < CAT_SIZE ? SLOT_INDEX[slot] : -1;
+        if (index < 0) {
+            return;
+        }
+        List<Entry> entries = catalog.getOrDefault(category, List.of());
+        int entryIndex = page * PAGE_SIZE + index;
+        if (entryIndex < entries.size()) {
+            int quantity = event.isShiftClick() ? 16 : event.isRightClick() ? 64 : 1;
+            buy(player, entries.get(entryIndex), quantity);
             top.setItem(BALANCE_SLOT, balanceItem(player));
         }
     }
