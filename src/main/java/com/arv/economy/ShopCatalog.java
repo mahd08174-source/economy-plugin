@@ -354,7 +354,7 @@ final class ShopCatalog {
             NETHERITE_LEGGINGS 280000
             NETHERITE_BOOTS 200000
             TURTLE_HELMET 30000
-            ELYTRA 500000
+            ELYTRA 10000000
             # Diamond Tools
             DIAMOND_PICKAXE 40000
             DIAMOND_AXE 36000

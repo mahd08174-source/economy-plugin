@@ -144,17 +144,20 @@ public class Kits implements Listener, CommandExecutor, TabCompleter {
         kits.add(new Kit("builder", "Builder Kit", Material.YELLOW_SHULKER_BOX, NamedTextColor.YELLOW, 700_000,
                 "Diamond tools and stacks of building blocks", builder));
 
-        // Explorer Kit - green box. Items alone are worth about $0.9m.
+        // Explorer Kit - green box. Items alone are worth about $0.6m.
         List<ItemStack> explorer = new ArrayList<>();
-        explorer.add(item(Material.ELYTRA, 1, "unbreaking", 3, "mending", 1));
-        explorer.add(item(Material.FIREWORK_ROCKET, 64));
+        explorer.add(item(Material.DIAMOND_HELMET, 1, "protection", 4, "unbreaking", 3, "mending", 1));
+        explorer.add(item(Material.DIAMOND_CHESTPLATE, 1, "protection", 4, "unbreaking", 3, "mending", 1));
+        explorer.add(item(Material.DIAMOND_LEGGINGS, 1, "protection", 4, "unbreaking", 3, "mending", 1));
+        explorer.add(item(Material.DIAMOND_BOOTS, 1, "protection", 4, "unbreaking", 3, "mending", 1, "feather_falling", 4));
         explorer.add(item(Material.ENDER_PEARL, 16));
         explorer.add(item(Material.DIAMOND_SWORD, 1, "sharpness", 4, "unbreaking", 3, "mending", 1));
         explorer.add(item(Material.SHIELD, 1, "unbreaking", 3, "mending", 1));
         explorer.add(item(Material.WATER_BUCKET, 1));
         explorer.add(item(Material.COOKED_BEEF, 64));
-        kits.add(new Kit("explorer", "Explorer Kit", Material.GREEN_SHULKER_BOX, NamedTextColor.GREEN, 1_000_000,
-                "Elytra, rockets and survival essentials", explorer));
+        explorer.add(item(Material.TORCH, 64));
+        kits.add(new Kit("explorer", "Explorer Kit", Material.GREEN_SHULKER_BOX, NamedTextColor.GREEN, 800_000,
+                "Diamond armor, pearls and survival essentials", explorer));
     }
 
     // ---------- item helpers ----------
