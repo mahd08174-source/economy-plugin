@@ -2,7 +2,7 @@ name: EconomyPlugin
 version: '1.0.0'
 main: com.arv.economy.EconomyPlugin
 api-version: '26.2'
-description: DerekSMP economy with /bal /pay /shop /sell /tpa /tpahere /rtp /home, admin tools and a cash sidebar
+description: DerekSMP economy with /bal /pay /shop /kit /sell /tpa /tpahere /rtp /home, admin tools and a cash sidebar
 commands:
   bal:
     description: Show your balance (or another player's)
@@ -20,6 +20,10 @@ commands:
   shop:
     description: Open the shop
     usage: /shop
+  kit:
+    description: Browse and buy kit bundles delivered in color-coded shulker boxes
+    usage: /kit [pvp|mining|builder|explorer]
+    aliases: [kits]
   sell:
     description: Sell the item in your hand, or everything sellable with /sell all
     usage: /sell [all]

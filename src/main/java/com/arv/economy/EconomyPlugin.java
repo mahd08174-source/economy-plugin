@@ -17,6 +17,8 @@ public class EconomyPlugin extends JavaPlugin implements Listener {
     private HomeManager homes;
     private SidebarManager sidebar;
     private EcoCommands commands;
+    private Shop shop;
+    private Kits kits;
 
     @Override
     public void onEnable() {
@@ -25,7 +27,8 @@ public class EconomyPlugin extends JavaPlugin implements Listener {
         homes = new HomeManager(this);
         homes.load();
         sidebar = new SidebarManager(this);
-        Shop shop = new Shop(this);
+        shop = new Shop(this);
+        kits = new Kits(this);
         commands = new EcoCommands(this, shop);
 
         for (String name : List.of("bal", "pay", "give", "remove", "shop", "sell",
@@ -39,8 +42,15 @@ public class EconomyPlugin extends JavaPlugin implements Listener {
             }
         }
 
+        PluginCommand kitCmd = getCommand("kit");
+        if (kitCmd != null) {
+            kitCmd.setExecutor(kits);
+            kitCmd.setTabCompleter(kits);
+        }
+
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(shop, this);
+        Bukkit.getPluginManager().registerEvents(kits, this);
 
         Bukkit.getScheduler().runTaskTimer(this, sidebar::updateAll, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, economy::saveIfDirty, 600L, 600L);
@@ -72,6 +82,14 @@ public class EconomyPlugin extends JavaPlugin implements Listener {
 
     public SidebarManager sidebar() {
         return sidebar;
+    }
+
+    public Shop shop() {
+        return shop;
+    }
+
+    public Kits kits() {
+        return kits;
     }
 
     @EventHandler
