@@ -42,7 +42,7 @@ import java.util.Map;
 public class Shop implements Listener {
 
     /** Fraction of the shop price you get back when selling. */
-    public static final double SELL_RATIO = 0.35;
+    public static final double SELL_RATIO = 0.5;
 
     public enum Category {
         BLOCKS("Blocks", Material.GRASS_BLOCK, 10, NamedTextColor.GREEN,
@@ -442,60 +442,13 @@ public class Shop implements Listener {
 
     // ---------- selling ----------
 
-    // ---------- sell lookup ----------
-
-    /** Items that are not in the shop catalog still sell, at a low fallback price. */
-    private final Map<Material, Entry> fallbackIndex = new HashMap<>();
-
-    /** Obtainable-by-cheat items that are never sold even though they have no hardness. */
-    private static final java.util.Set<String> NEVER_SELL = java.util.Set.of(
-            "DEBUG_STICK", "KNOWLEDGE_BOOK", "BARRIER", "LIGHT", "STRUCTURE_VOID");
-
-    private static boolean unsellable(Material type) {
-        if (type.isAir() || !type.isItem() || NEVER_SELL.contains(type.name())) {
-            return true;
-        }
-        // unbreakable blocks such as bedrock, command blocks, end portal frames, reinforced deepslate
-        return type.isBlock() && type.getHardness() < 0;
-    }
-
-    /** Fallback shop price. Always below crafting cost so it can't be used to farm money. */
-    private static double fallbackPrice(Material type) {
-        if (type.getMaxDurability() > 0) {
-            String name = type.name();
-            if (name.startsWith("IRON_") || name.startsWith("GOLDEN_")) {
-                return 3000;
-            }
-            if (name.startsWith("CHAINMAIL_")) {
-                return 800;
-            }
-            return 200;
-        }
-        return 100;
-    }
-
-    private Entry fallback(Material type) {
-        if (unsellable(type)) {
-            return null;
-        }
-        // durable gear is filed under Combat so /sell all skips it (hold it and use /sell)
-        return fallbackIndex.computeIfAbsent(type, t -> new Entry(
-                t.getMaxDurability() > 0 ? Category.COMBAT : Category.MISC,
-                pretty(t.name()), fallbackPrice(t), new ItemStack(t)));
-    }
-
     private Entry find(ItemStack stack) {
         Material type = stack.getType();
         boolean exact = isExact(type);
-        if (stack.hasItemMeta()) {
+        if (!exact && stack.hasItemMeta()) {
             ItemMeta meta = stack.getItemMeta();
-            // unbreakable items can never be sold
-            if (meta.isUnbreakable()) {
-                return null;
-            }
             // never sell enchanted/renamed items or containers that may hold items
-            if (!exact && (meta.hasEnchants() || meta.hasDisplayName() || meta instanceof BlockStateMeta
-                    || meta instanceof EnchantmentStorageMeta)) {
+            if (meta.hasEnchants() || meta.hasDisplayName() || meta instanceof BlockStateMeta) {
                 return null;
             }
         }
@@ -507,8 +460,7 @@ public class Shop implements Listener {
             }
             return null;
         }
-        Entry entry = plainIndex.get(type);
-        return entry != null ? entry : fallback(type);
+        return plainIndex.get(type);
     }
 
     public void sellHand(Player player) {
@@ -558,6 +510,18 @@ public class Shop implements Listener {
         plugin.economy().add(player.getUniqueId(), total);
         player.sendMessage(Component.text("Sold " + count + " items for " + EconomyManager.format(total) + ".",
                 NamedTextColor.GREEN));
+    }
+
+    /** Money a stack would pay when sold, or -1 when it can't be sold (used by the sell menu). */
+    public double sellQuote(ItemStack stack) {
+        if (stack == null || stack.getType().isAir()) {
+            return -1;
+        }
+        Entry entry = find(stack);
+        if (entry == null) {
+            return -1;
+        }
+        return EconomyManager.round(unitSell(entry) * stack.getAmount());
     }
 
     // ---------- item inspector ----------

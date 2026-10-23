@@ -29,8 +29,8 @@ commands:
     usage: /kit [pvp|mining|builder|explorer]
     aliases: [kits]
   sell:
-    description: Sell the item in your hand, or everything sellable with /sell all
-    usage: /sell [all]
+    description: Open the sell menu (/sell hand and /sell all also work)
+    usage: /sell [hand|all]
   tpa:
     description: Ask to teleport to a player
     usage: /tpa <player>

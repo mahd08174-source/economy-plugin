@@ -48,6 +48,13 @@ public class EconomyPlugin extends JavaPlugin implements Listener {
             kitCmd.setTabCompleter(kits);
         }
 
+        SellMenu sellMenu = new SellMenu(this);
+        PluginCommand sellCmd = getCommand("sell");
+        if (sellCmd != null) {
+            sellCmd.setExecutor(sellMenu);
+            sellCmd.setTabCompleter(sellMenu);
+        }
+
         PluginCommand baltopCmd = getCommand("baltop");
         if (baltopCmd != null) {
             baltopCmd.setExecutor(new Baltop(this));
@@ -56,6 +63,7 @@ public class EconomyPlugin extends JavaPlugin implements Listener {
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(shop, this);
         Bukkit.getPluginManager().registerEvents(kits, this);
+        Bukkit.getPluginManager().registerEvents(sellMenu, this);
 
         Bukkit.getScheduler().runTaskTimer(this, sidebar::updateAll, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, economy::saveIfDirty, 600L, 600L);
