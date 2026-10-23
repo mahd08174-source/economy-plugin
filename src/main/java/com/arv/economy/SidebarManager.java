@@ -21,6 +21,8 @@ public class SidebarManager {
     private static final String BLANK_ENTRY = "\u00a71";
     private static final String NAME_ENTRY = "\u00a72";
     private static final String CASH_ENTRY = "\u00a73";
+    private static final String IP_ENTRY = "\u00a74";
+    private static final String SERVER_IP = "dereksmp.minekeep.gg";
 
     private final EconomyPlugin plugin;
     private final Map<UUID, Scoreboard> boards = new HashMap<>();
@@ -43,10 +45,13 @@ public class SidebarManager {
         nameTeam.addEntry(NAME_ENTRY);
         Team cashTeam = board.registerNewTeam("cash");
         cashTeam.addEntry(CASH_ENTRY);
+        Team ipTeam = board.registerNewTeam("ip");
+        ipTeam.addEntry(IP_ENTRY);
 
-        objective.getScore(BLANK_ENTRY).setScore(3);
-        objective.getScore(NAME_ENTRY).setScore(2);
-        objective.getScore(CASH_ENTRY).setScore(1);
+        objective.getScore(BLANK_ENTRY).setScore(4);
+        objective.getScore(NAME_ENTRY).setScore(3);
+        objective.getScore(CASH_ENTRY).setScore(2);
+        objective.getScore(IP_ENTRY).setScore(1);
 
         boards.put(player.getUniqueId(), board);
         update(player);
@@ -61,14 +66,16 @@ public class SidebarManager {
         }
         Team nameTeam = board.getTeam("name");
         Team cashTeam = board.getTeam("cash");
+        Team ipTeam = board.getTeam("ip");
         if (nameTeam != null) {
-            nameTeam.prefix(Component.text("Player: ", NamedTextColor.GRAY)
-                    .append(Component.text(player.getName(), NamedTextColor.WHITE)));
+            nameTeam.prefix(Component.text(player.getName(), NamedTextColor.WHITE));
         }
         if (cashTeam != null) {
             double cash = plugin.economy().get(player.getUniqueId());
-            cashTeam.prefix(Component.text("Cash: ", NamedTextColor.GRAY)
-                    .append(Component.text(EconomyManager.format(cash), NamedTextColor.GREEN)));
+            cashTeam.prefix(Component.text(EconomyManager.format(cash), NamedTextColor.GREEN));
+        }
+        if (ipTeam != null) {
+            ipTeam.prefix(Component.text(SERVER_IP, NamedTextColor.YELLOW));
         }
         if (player.getScoreboard() != board) {
             player.setScoreboard(board);

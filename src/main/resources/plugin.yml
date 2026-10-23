@@ -2,12 +2,16 @@ name: EconomyPlugin
 version: '1.0.0'
 main: com.arv.economy.EconomyPlugin
 api-version: '26.2'
-description: DerekSMP economy with /bal /pay /shop /kit /sell /tpa /tpahere /rtp /home, admin tools and a cash sidebar
+description: DerekSMP economy with /bal /baltop /pay /shop /kit /sell /tpa /tpahere /rtp /home, admin tools and a cash sidebar
 commands:
   bal:
     description: Show your balance (or another player's)
     usage: /bal [player]
     aliases: [balance, money]
+  baltop:
+    description: Show the 10 richest players and your own placement
+    usage: /baltop
+    aliases: [topbal, moneytop]
   pay:
     description: Pay a player (amounts like 100m work)
     usage: /pay <player> <amount>

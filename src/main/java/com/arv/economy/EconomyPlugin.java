@@ -48,6 +48,11 @@ public class EconomyPlugin extends JavaPlugin implements Listener {
             kitCmd.setTabCompleter(kits);
         }
 
+        PluginCommand baltopCmd = getCommand("baltop");
+        if (baltopCmd != null) {
+            baltopCmd.setExecutor(new Baltop(this));
+        }
+
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(shop, this);
         Bukkit.getPluginManager().registerEvents(kits, this);
